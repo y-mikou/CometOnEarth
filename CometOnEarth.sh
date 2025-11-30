@@ -9,6 +9,9 @@ function view_violation () {
         #行頭が 、。」』）
         REGEX02='^[、。」』）]'
 
+        #折り返し限界-5文字に■(母字の2倍以上のルビ)がある
+        REGEX03="^[^■]{$(( ${FOLD_LENGTH} - 5 )),${FOLD_LENGTH}}■"
+
     }
 
     #疑似折り返しデータ作成前に、以下を実施する
@@ -19,7 +22,7 @@ function view_violation () {
         VIOLATION_COUNT=$(\
             cat "${TARGET_FILE}" \
             | sed -E "s/(.{${FOLD_LENGTH}})/\\1\\n/g" \
-            | grep -cE --color=always "(${REGEX01})|(${REGEX02})" \
+            | grep -cE --color=always "(${REGEX01})|(${REGEX02})|(${REGEX03})"
         )
     }
 
@@ -33,7 +36,7 @@ function view_violation () {
         VIEW_COUNT=${VIEW_COUNT_tmp:-10}
         echo "🗿 全${VIOLATION_COUNT}箇所(行)中、${VIEW_COUNT}箇所(行)分の警告箇所を表示します"
 
-        if [[ ${VIEW_COUNT} =~ ^~[0-9]+$ ]] ; then
+        if [[ ${VIEW_COUNT} =~ ^[0-9]+-[0-9]+$ ]] ; then
             echo "🚨 警告: このモードでは、引数4 (表示数) に範囲は使用できません (指定された値: ${VIEW_COUNT})" >&2
             exit 1
         fi
@@ -51,7 +54,7 @@ function view_violation () {
         #確認対称を検出
         cat "${TARGET_FILE}" \
         | sed -E "s/(.{${FOLD_LENGTH}})/\\1\\n/g" \
-        | grep -En1 --color=always "(${REGEX01})|(${REGEX02})" \
+        | grep -En1 --color=always "(${REGEX01})|(${REGEX02})|(${REGEX03})" \
         | sed -n 1,${VIEW_ROWS}p
     }
 
@@ -99,13 +102,13 @@ function view_fold () {
         #抽出行は、前1行、HIT行、後1行、区切行、の4行なので、結果の抽出行は件数の4倍で設定する
         #確認対称を検出
 
-        if [[ ${VIEW_COUNT} -gt 0 ]] ; then
+        if [[ ${VIEW_COUNT} -eq 0 ]] ; then
+            cat "${TARGET_FILE}" \
+            | sed -E "s/(.{${FOLD_LENGTH}})/\\1\\n/g"
+        else
             cat "${TARGET_FILE}" \
             | sed -E "s/(.{${FOLD_LENGTH}})/\\1\\n/g" \
             | sed -n ${comnd}
-        else
-            cat "${TARGET_FILE}" \
-            | sed -E "s/(.{${FOLD_LENGTH}})/\\1\\n/g"
         fi
     }
 
@@ -123,7 +126,7 @@ function view_fold () {
     TARGET_FILE="$1"
     VIEW_MODE="$2"
     FOLD_LENGTH="$3"
-    VIEW_COUNT_tmp=${4}
+    VIEW_COUNT_tmp="${4}"
     TMP_COUNT=0
     VIOLATION_COUNT=0
 }
@@ -131,7 +134,7 @@ function view_fold () {
 : 引数チェック & {
     ## 引数2が正の整数で100以下であるかのチェック
     if ! [[ "$FOLD_LENGTH" =~ ^[0-9]+$ ]] || [ "$FOLD_LENGTH" -lt 0 ] || [ "$FOLD_LENGTH" -gt 100 ]; then
-        echo "🚨 警告: 引数2 (折返し文字数) は、0から100までの正の整数である必要があります。 (指定された値: $FOLD_LENGTH)" >&2
+        echo "🚨 警告: 引数3 (折返し文字数) は、0から100までの正の整数である必要があります。 (指定された値: $FOLD_LENGTH)" >&2
         exit 1
     fi
 
