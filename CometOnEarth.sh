@@ -1,121 +1,172 @@
 #!/bin/bash
 
-# --- 設定と初期化 ---
-TARGET_FILE="$1"
-FOLD_LENGTH="$2"
-TEMP_FILE=$(mktemp) # 中間ファイル
-CURRENT_LOCALE=""
-MAX_VIOLATIONS=10 # 最大検出数
+function view_violation () {
 
-# ANSIエスケープコードによる色の設定
-# 赤色で強調
-HIGHLIGHT_START='\033[31m'
-HIGHLIGHT_END='\033[0m'
-VIOLATION_COUNT=0 # 検出カウンター
+    : 検出すべき内容の定義 & {
+        #3文字以下で終わる行の確認
+        REGEX01='^.{1,3}$'
 
-# 終了時の処理 (クリーンアップとロケール復元)
-cleanup() {
-    rm -f "$TEMP_FILE"
-    if [ -n "$CURRENT_LOCALE" ] && [ "$CURRENT_LOCALE" != "$(locale -a | grep -i '^ja_jp.utf8$')" ]; then
-        export LC_ALL="$CURRENT_LOCALE"
-    fi
-}
-trap cleanup EXIT
+        #行頭が 、。」』）
+        REGEX02='^[、。」』）]'
 
-# --- 1. 引数のチェック (変更なし) ---
-## 引数2が正の整数で100以下であるかのチェック
-if ! [[ "$FOLD_LENGTH" =~ ^[0-9]+$ ]] || [ "$FOLD_LENGTH" -le 0 ] || [ "$FOLD_LENGTH" -gt 100 ]; then
-    echo "🚨 警告: 引数2 (折返し文字数) は、1から100までの正の整数である必要があります。 (指定された値: $FOLD_LENGTH)" >&2
-    exit 1
-fi
+    }
 
-## 対象ファイルが存在し、読み取り可能か
-if [ ! -f "$TARGET_FILE" ] || [ ! -r "$TARGET_FILE" ]; then
-    echo "🚨 警告: 対象ファイル '$TARGET_FILE' が存在しないか、読み取りできません。" >&2
-    exit 1
-fi
+    #疑似折り返しデータ作成前に、以下を実施する
+    ## 《《母字》》を母字のみにする…… 《《 と 》》 を削除する。
+    ##　｜母字《ルビ文字》を、母字数とルビ文字数の2倍で長い方のみを保持して、そうでない方を削除する。
+    : 発生件数 & {
 
-## 対象ファイルは文字コードutf-8であるか
-ENCODING=$(file -i "$TARGET_FILE" | grep -oP 'charset=\K[^;]*')
-if [ "$ENCODING" != "utf-8" ]; then
-    echo "🚨 警告: 対象ファイル '$TARGET_FILE' の文字コードはutf-8である必要があります。 (現在の文字コード: $ENCODING)" >&2
-    exit 1
-fi
+        VIOLATION_COUNT=$(\
+            cat "${TARGET_FILE}" \
+            | sed -E "s/(.{${FOLD_LENGTH}})/\\1\\n/g" \
+            | grep -cE --color=always "(${REGEX01})|(${REGEX02})" \
+        )
+    }
 
-## 対象ファイル内の改行コードはlfであるか
-if grep -q $'\r' "$TARGET_FILE"; then
-    echo "🚨 警告: 対象ファイル '$TARGET_FILE' の改行コードはLFである必要があります。CRLFが含まれています。" >&2
-    exit 1
-fi
+    : 表示行数の操作 & {
 
+        echo "✨️禁則処理・その他修正必要箇所検出モード"
 
-# --- 2. ロケール管理 (変更なし) ---
-if ! locale | grep -q 'LC_ALL\|LANG' | grep -i -q 'ja_jp.utf8'; then
-    CURRENT_LOCALE="${LC_ALL:-${LANG}}"
-    if locale -a | grep -i -q '^ja_jp.utf8$'; then
-        export LC_ALL="ja_JP.UTF-8"
-    else
-        echo "⚠️ 注意: ja_JP.UTF-8ロケールが見つかりません。文字数カウントに影響が出る可能性があります。" >&2
-    fi
-fi
+        if [[ -z ${VIEW_COUNT_tmp} ]] ; then
+            echo "🗨️ 表示件数指定がなかったためデフォルトの10件表示です"
+        fi
+        VIEW_COUNT=${VIEW_COUNT_tmp:-10}
+        echo "🗿 全${VIOLATION_COUNT}箇所(行)中、${VIEW_COUNT}箇所(行)分の警告箇所を表示します"
 
-
-# --- 3. 折り返し処理と中間ファイル出力 (変更なし) ---
-echo "⚙️ テキストを${FOLD_LENGTH}文字ごとに折り返して処理中..."
-while IFS= read -r line; do
-    echo "$line" | grep -oE ".{1,${FOLD_LENGTH}}" | sed '$!s/$/\n/'
-done < "$TARGET_FILE" > "$TEMP_FILE"
-
-
-# --- 4. 禁則処理/修正候補チェック ---
-echo "🔎 禁則処理/修正候補箇所をチェック中..."
-
-while IFS= read -r line; do
-    # 現在の行の文字数を取得 (改行文字を除く)
-    LINE_LENGTH=$(echo "$line" | wc -m)
-    ACTUAL_LENGTH=$((LINE_LENGTH - 1))
-    
-    IS_VIOLATION=false
-
-    # 4-1. 禁則処理候補: 行の頭が「、」「。」「」」「）」「』」「〟」いずれかだった場合
-    if echo "$line" | grep -qE '^[,。）」』〟]'; then
-        # 条件を満たす箇所の文字色を変更して目立たせる
-        FIRST_CHAR=$(echo "$line" | head -c 1)
-        REST_OF_LINE=$(echo "$line" | tail -c +2)
-        
-        echo "❌ **禁則処理候補**: 行頭が句読点/閉じ括弧です。"
-        echo "   行内容: ${HIGHLIGHT_START}${FIRST_CHAR}${HIGHLIGHT_END}${REST_OF_LINE}"
-        
-        IS_VIOLATION=true
-
-    # 4-2. 修正候補: 行の長さが2文字以下の場合
-    elif [ "$ACTUAL_LENGTH" -le 2 ]; then
-        
-        echo "💡 **修正候補箇所**: 行の長さが2文字以下です。 ($ACTUAL_LENGTH 文字)"
-        echo "   行内容: $line"
-        
-        IS_VIOLATION=true
-    fi
-    
-    # 候補が見つかった場合の処理
-    if $IS_VIOLATION; then
-        VIOLATION_COUNT=$((VIOLATION_COUNT + 1))
-        
-        # 検出数が上限に達したかチェック
-        if [ "$VIOLATION_COUNT" -ge "$MAX_VIOLATIONS" ]; then
-            echo "---"
-            echo "🛑 検出数が上限の${MAX_VIOLATIONS}個に達しました。"
-            echo "⚠️ **禁則処理候補もしくは修正候補箇所あり**としてスクリプトを終了します。"
+        if [[ ${VIEW_COUNT} =~ ^~[0-9]+$ ]] ; then
+            echo "🚨 警告: このモードでは、引数4 (表示数) に範囲は使用できません (指定された値: ${VIEW_COUNT})" >&2
             exit 1
         fi
+        read -p ">Press Enter<"
+        echo "---------------------------------------"
+    }
+
+    : 検出内容 & {
+        #抽出行は、前1行、HIT行、後1行、区切行、の4行なので、結果の抽出行は件数の4倍で設定する
+        if [[ ${VIOLATION_COUNT} -lt ${VIEW_COUNT} ]] ;then
+            VIEW_COUNT=${VIOLATION_COUNT}
+        fi
+        VIEW_ROWS=$(( ${VIEW_COUNT} * 4))
+
+        #確認対称を検出
+        cat "${TARGET_FILE}" \
+        | sed -E "s/(.{${FOLD_LENGTH}})/\\1\\n/g" \
+        | grep -En1 --color=always "(${REGEX01})|(${REGEX02})" \
+        | sed -n 1,${VIEW_ROWS}p
+    }
+
+    : 終了処理 & {
+        echo "---------------------------------------"
+        if [ "$VIOLATION_COUNT" -eq 0 ]; then
+            echo "✅ 禁則処理候補箇所なし、修正候補箇所なし"
+        fi
+    }
+}
+
+function view_fold () {
+
+    : 表示行数の操作 & {
+        echo "✨️折り返し確認機能モード。"
+        if [[ -z ${VIEW_COUNT_tmp} ]] ; then
+            echo "🗨️ 表示件数指定がなかったためデフォルトの1−100行表示です"
+        fi
+        VIEW_COUNT="${VIEW_COUNT_tmp:-1-100}"
+
+        folded_rows_count=$(cat "${TARGET_FILE}" | sed -E "s/(.{${FOLD_LENGTH}})/\\1\\n/g" | wc -l )
+
+        if [[ ${VIEW_COUNT} -eq 0 ]] ; then
+            echo "🗿折返結果、全行を表示します。"
+        else
+            if [[ ${VIEW_COUNT} =~ [0-9]+-[0-9]+ ]] ; then
+                startLine=$(echo ${VIEW_COUNT} | cut -d '-' -f 1)
+                endLine=$(echo ${VIEW_COUNT} | cut -d '-' -f 2)
+                comnd="${startLine},${endLine}p"
+                echo "🗿折返結果、全${folded_rows_count}行中の${startLine}行目〜${endLine}行目を表示します。"
+            else
+                comnd="1,${VIEW_COUNT}p"
+                echo "🗿折返結果、全${folded_rows_count}行中の1行目〜${VIEW_COUNT}行目を表示します。"
+            fi
+        fi
+
+        read -p ">Press Enter<"
+        echo "---------------------------------------"
+    }
+
+    #疑似折り返しデータ作成前に、以下を実施する
+    ## 《《母字》》を母字のみにする…… 《《 と 》》 を削除する。
+    ##　｜母字《ルビ文字》を、母字数とルビ文字数の2倍で長い方のみを保持して、そうでない方を削除する。
+    : 折り返し表示実行 & {
+        #抽出行は、前1行、HIT行、後1行、区切行、の4行なので、結果の抽出行は件数の4倍で設定する
+        #確認対称を検出
+
+        if [[ ${VIEW_COUNT} -gt 0 ]] ; then
+            cat "${TARGET_FILE}" \
+            | sed -E "s/(.{${FOLD_LENGTH}})/\\1\\n/g" \
+            | sed -n ${comnd}
+        else
+            cat "${TARGET_FILE}" \
+            | sed -E "s/(.{${FOLD_LENGTH}})/\\1\\n/g"
+        fi
+    }
+
+    : 終了処理 & {
+        echo "---------------------------------------"
+    }    
+}
+
+
+###################################################
+## ランディンポイント
+###################################################
+
+: 設定と初期化 & {
+    TARGET_FILE="$1"
+    VIEW_MODE="$2"
+    FOLD_LENGTH="$3"
+    VIEW_COUNT_tmp=${4}
+    TMP_COUNT=0
+    VIOLATION_COUNT=0
+}
+
+: 引数チェック & {
+    ## 引数2が正の整数で100以下であるかのチェック
+    if ! [[ "$FOLD_LENGTH" =~ ^[0-9]+$ ]] || [ "$FOLD_LENGTH" -lt 0 ] || [ "$FOLD_LENGTH" -gt 100 ]; then
+        echo "🚨 警告: 引数2 (折返し文字数) は、0から100までの正の整数である必要があります。 (指定された値: $FOLD_LENGTH)" >&2
+        exit 1
     fi
 
-done < "$TEMP_FILE"
+    ## 対象ファイルが存在し、読み取り可能か
+    if [ ! -f "$TARGET_FILE" ] || [ ! -r "$TARGET_FILE" ]; then
+        echo "🚨 警告: 対象ファイル '$TARGET_FILE' が存在しないか、読み取りできません。" >&2
+        exit 1
+    fi
 
-# --- 5. 終了処理 ---
-echo "---"
-if [ "$VIOLATION_COUNT" -gt 0 ]; then
-    echo "⚠️ **禁則処理候補もしくは修正候補箇所あり** (${VIOLATION_COUNT}個検出) としてスクリプトを終了します。"
-    exit 1
-else
-    echo "✅ **禁則処理候補箇所なし、修正候補箇所なし**としてスクリプトを終了します
+    ## モードの選択
+    if [[ ! ${VIEW_MODE} =~ [FV] ]]; then
+        echo "🚨 警告: モードは F:折返確認 V:警告検出 のいずれかにしてください。 (指定された値: $VIEW_MODE)" >&2
+        exit 1
+    fi
+}
+
+: 内容チェック & {
+    ## 対象ファイルは文字コードutf-8であるか
+    ENCODING=$(file -i "${TARGET_FILE}" | grep -oP 'charset=[^;]*' | grep -oP "[uU][tT][fF]-*8")
+    if [ "$ENCODING" != "utf-8" ]; then
+        echo "🚨 警告: 対象ファイル ${TARGET_FILE} の文字コードはutf-8である必要があります。 (現在の文字コード: ${ENCODING})" >&2
+        exit 1
+    fi
+
+    ## 対象ファイル内の改行コードはlfであるか
+    if grep -q $'\\r' "${TARGET_FILE}"; then
+        echo "🚨 警告: 対象ファイル ${TARGET_FILE} の改行コードはLFである必要があります。CRLFが含まれています。" >&2
+        exit 1
+    fi
+}
+
+case "${VIEW_MODE}" in
+    'F')    view_fold
+            ;;
+    'V')    view_violation
+            ;;
+    *  ) ;;
+esac
