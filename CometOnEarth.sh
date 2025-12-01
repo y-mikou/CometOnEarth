@@ -1,8 +1,60 @@
 #!/bin/bash
 
+###################################################################
+## 終了処理
+###################################################################
+function do_exit () {
+    rm -f words.log base_count.log ruby_count.log
+    rm -f "${TARGET_FILE_WK}"
+    exit 0
+}
+
+###################################################################
+## ルビ文字縮退関数
+## 　ルビ付き文字を、折り返し可能なように縮退※させる。
+## 　※母字数の2倍の方がルビ文字数より長ければ母字を残し、
+## 　　ルビ文字数のほうが方が長ければルビ字数の半分(切上)の■にする
+## 　※圏点についても、圏点記号を消去して母字のみにする
+###################################################################
+function ruby_collapse () {
+
+    sed -i 's/《《\([^》]*\)》》/\1/g' "${TARGET_FILE_WK}"
+
+    cat "${TARGET_FILE_WK}" | grep -oE '｜[^《]+《[^》]+》' | sed 's/[｜》]//g' | sed 's/《/\t/' > words.log
+
+    cat "${TARGET_FILE_WK}" | grep -oE '｜[^《]+《[^》]+》' | sed 's/[｜》]//g' | sed 's/《/\t/' | cut -f 1 | awk '{ print length($0) }' > base_count.log
+
+    cat "${TARGET_FILE_WK}" | grep -oE '｜[^《]+《[^》]+》' | sed 's/[｜》]//g' | sed 's/《/\t/' | cut -f 2 | awk '{ print length($0) }' > ruby_count.log
+
+    paste words.log base_count.log ruby_count.log | sort | uniq | while read line
+        do
+            base_word=$(echo $line | cut -d' ' -f 1)		
+            ruby_word=$(echo $line | cut -d' ' -f 2)
+            base_word_count=$(echo $line | cut -d' ' -f 3)
+            ruby_word_count=$(echo $line | cut -d' ' -f 4)
+            ruby_word_half=${ruby_word:0:(( (${#ruby_word} + 2 - 1) / 2 ))}
+            # echo "${ruby_word}/${ruby_word_half}"
+            replace_from="｜${base_word}《${ruby_word}》"
+            if [[ ${base_word_count} -ge ${ruby_word_count} ]] ; then
+                replace_to="${base_word}"
+            else
+                replace_to=$( echo ${base_word} | sed "s/./■/g" )
+            fi
+            sed -i "s/${replace_from}/${replace_to}/g" "${TARGET_FILE_WK}"
+
+        done
+}
+
+###################################################################
+## 禁則処理・その他修正必要箇所検出モード
+##   禁則処理や折り返し後の表示崩れなど
+## 　折り返したあとで出現する修正必要箇所を検出して表示する
+###################################################################
 function view_violation () {
 
-    : 検出すべき内容の定義 & {
+    echo "✨️禁則処理・その他修正必要箇所検出モード"
+
+    : 検出すべき内容の定義 && {
         #3文字以下で終わる行の確認
         REGEX01='^.{1,3}$'
 
@@ -14,45 +66,36 @@ function view_violation () {
 
     }
 
-    #疑似折り返しデータ作成前に、以下を実施する
-    ## 《《母字》》を母字のみにする…… 《《 と 》》 を削除する。
-    ##　｜母字《ルビ文字》を、母字数とルビ文字数の2倍で長い方のみを保持して、そうでない方を削除する。
-    : 発生件数 & {
+    ruby_collapse
 
+    : 発生件数取得と件数指定 && {
+        #検出件数を取得
         VIOLATION_COUNT=$(\
-            cat "${TARGET_FILE}" \
+            cat "${TARGET_FILE_WK}" \
             | sed -E "s/(.{${FOLD_LENGTH}})/\\1\\n/g" \
             | grep -cE --color=always "(${REGEX01})|(${REGEX02})|(${REGEX03})"
         )
-    }
-
-    : 表示行数の操作 & {
-
-        echo "✨️禁則処理・その他修正必要箇所検出モード"
 
         if [[ -z ${VIEW_COUNT_tmp} ]] ; then
             echo "🗨️ 表示件数指定がなかったためデフォルトの10件表示です"
         fi
         VIEW_COUNT=${VIEW_COUNT_tmp:-10}
+
         echo "🗿 全${VIOLATION_COUNT}箇所(行)中、${VIEW_COUNT}箇所(行)分の警告箇所を表示します"
 
-        if [[ ${VIEW_COUNT} =~ ^[0-9]+-[0-9]+$ ]] ; then
-            echo "🚨 警告: このモードでは、引数4 (表示数) に範囲は使用できません (指定された値: ${VIEW_COUNT})" >&2
-            exit 1
-        fi
         read -p ">Press Enter<"
         echo "---------------------------------------"
-    }
 
-    : 検出内容 & {
         #抽出行は、前1行、HIT行、後1行、区切行、の4行なので、結果の抽出行は件数の4倍で設定する
         if [[ ${VIOLATION_COUNT} -lt ${VIEW_COUNT} ]] ;then
             VIEW_COUNT=${VIOLATION_COUNT}
         fi
         VIEW_ROWS=$(( ${VIEW_COUNT} * 4))
+    }
 
-        #確認対称を検出
-        cat "${TARGET_FILE}" \
+    : 警告箇所検出 && {
+        #警告箇所の検出を実行
+        cat "${TARGET_FILE_WK}" \
         | sed -E "s/(.{${FOLD_LENGTH}})/\\1\\n/g" \
         | grep -En1 --color=always "(${REGEX01})|(${REGEX02})|(${REGEX03})" \
         | sed -n 1,${VIEW_ROWS}p
@@ -66,7 +109,14 @@ function view_violation () {
     }
 }
 
+###################################################################
+## 簡易折り返し表示モード
+## 　指定文字数で折り返した表示を行う
+##
+###################################################################
 function view_fold () {
+
+    ruby_collapse
 
     : 表示行数の操作 & {
         echo "✨️折り返し確認機能モード。"
@@ -75,7 +125,7 @@ function view_fold () {
         fi
         VIEW_COUNT="${VIEW_COUNT_tmp:-1-100}"
 
-        folded_rows_count=$(cat "${TARGET_FILE}" | sed -E "s/(.{${FOLD_LENGTH}})/\\1\\n/g" | wc -l )
+        folded_rows_count=$(cat "${TARGET_FILE_WK}" | sed -E "s/(.{${FOLD_LENGTH}})/\\1\\n/g" | wc -l )
 
         if [[ ${VIEW_COUNT} -eq 0 ]] ; then
             echo "🗿折返結果、全行を表示します。"
@@ -95,18 +145,15 @@ function view_fold () {
         echo "---------------------------------------"
     }
 
-    #疑似折り返しデータ作成前に、以下を実施する
-    ## 《《母字》》を母字のみにする…… 《《 と 》》 を削除する。
-    ##　｜母字《ルビ文字》を、母字数とルビ文字数の2倍で長い方のみを保持して、そうでない方を削除する。
     : 折り返し表示実行 & {
         #抽出行は、前1行、HIT行、後1行、区切行、の4行なので、結果の抽出行は件数の4倍で設定する
         #確認対称を検出
 
         if [[ ${VIEW_COUNT} -eq 0 ]] ; then
-            cat "${TARGET_FILE}" \
+            cat "${TARGET_FILE_WK}" \
             | sed -E "s/(.{${FOLD_LENGTH}})/\\1\\n/g"
         else
-            cat "${TARGET_FILE}" \
+            cat "${TARGET_FILE_WK}" \
             | sed -E "s/(.{${FOLD_LENGTH}})/\\1\\n/g" \
             | sed -n ${comnd}
         fi
@@ -118,10 +165,11 @@ function view_fold () {
 }
 
 
-###################################################
+###################################################################
 ## ランディンポイント
-###################################################
-
+## 
+##
+###################################################################
 : 設定と初期化 & {
     TARGET_FILE="$1"
     VIEW_MODE="$2"
@@ -131,11 +179,42 @@ function view_fold () {
     VIOLATION_COUNT=0
 }
 
-: 引数チェック & {
-    ## 引数2が正の整数で100以下であるかのチェック
-    if ! [[ "$FOLD_LENGTH" =~ ^[0-9]+$ ]] || [ "$FOLD_LENGTH" -lt 0 ] || [ "$FOLD_LENGTH" -gt 100 ]; then
-        echo "🚨 警告: 引数3 (折返し文字数) は、0から100までの正の整数である必要があります。 (指定された値: $FOLD_LENGTH)" >&2
+: 環境チェック & {
+    localectl status | grep -Eq "LANG=ja_JP.UTF-8"
+    if [[ ${?} -ne 0 ]]; then
+        echo "警告: 環境のロケールが ja_JP.UTF-8 ではありません スクリプトを終了します。" >&2
         exit 1
+    fi
+}
+
+: 引数チェック & {
+
+    if [[ "${VIEW_MODE}" = 'V' ]] ; then
+        ## 引数の形式
+        if [[ ${VIEW_COUNT_tmp} =~ ^[0-9]+-[0-9]+$ ]] ; then
+            echo "🚨 警告:禁則処理・その他修正必要箇所検出モードでは、引数4 (表示数) に範囲は指定できません" >&2
+            exit 1
+        fi
+        if [[ ${VIEW_COUNT_tmp} -le 0 ]] ; then
+            echo "🚨 警告:引数4 (表示数) は、1以上の正の整数である必要があります。 (指定された値: $VIEW_COUNT_tmp)" >&2
+            exit 1
+        fi
+    fi
+
+    if [[ ${VIEW_MODE} =~ [VF] ]] ; then
+        ## 引数2が正の整数で100以下であるかのチェック
+        if [[ ! ${FOLD_LENGTH} =~ ^[0-9]+$ ]] || [[ ${FOLD_LENGTH} -lt 0 ]] || [[ ${FOLD_LENGTH} -gt 100 ]] ; then
+            echo "🚨 警告: 引数3 (折返し文字数) は、0から100までの正の整数である必要があります。 (指定された値: $FOLD_LENGTH)" >&2
+            exit 1
+        fi
+    fi
+
+    if [[ ${VIEW_MODE} =~ [VF] ]] ; then
+        ## 引数2が正の整数で100以下であるかのチェック
+        if [[ ! ${FOLD_LENGTH} =~ ^[0-9]+$ ]] || [[ ${FOLD_LENGTH} -lt 0 ]] || [[ ${FOLD_LENGTH} -gt 100 ]] ; then
+            echo "🚨 警告: 引数3 (折返し文字数) は、0から100までの正の整数である必要があります。 (指定された値: $FOLD_LENGTH)" >&2
+            exit 1
+        fi
     fi
 
     ## 対象ファイルが存在し、読み取り可能か
@@ -166,6 +245,9 @@ function view_fold () {
     fi
 }
 
+cp "${TARGET_FILE}" "${TARGET_FILE}_wk"
+TARGET_FILE_WK="${TARGET_FILE}_wk"
+
 case "${VIEW_MODE}" in
     'F')    view_fold
             ;;
@@ -173,3 +255,7 @@ case "${VIEW_MODE}" in
             ;;
     *  ) ;;
 esac
+
+# 正常終了したときに一時ファイルを削除する
+trap do_exit EXIT
+
