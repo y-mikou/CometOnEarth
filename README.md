@@ -1,3 +1,8 @@
+<img width="1071" height="539" alt="Image" src="https://github.com/user-attachments/assets/3d0b043a-b08e-4b65-afc9-1d037c4f4675" />
+禁則処理・その他修正必要箇所検出モード
+
+---
+
 # 目的
 
 組版実行後の版面から、体裁が崩れている状態※を探すのは目視となるため、辛い。
