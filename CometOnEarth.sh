@@ -54,11 +54,21 @@ function view_violation () {
         #3文字以下で終わる行の確認
         REGEX01='^.{1,3}$'
 
-        #行頭が 、。」』）
-        REGEX02='^[、。」』）]'
+        #行頭が 、。」』）〟！？!?
+        REGEX02='^[、。」』）〟！？!?]'
 
-        #折り返し限界-5文字に■(母字の2倍以上のルビ)がある
+        #折り返し限界-5文字に■(母字より長い可能性があるルビ)がある
         REGEX03="^[^■]{$(( ${FOLD_LENGTH} - 5 )),${FOLD_LENGTH}}■"
+
+        #折り返しをまたぐ形で「……」がある(行頭に1回だけ「…」が登場する)
+        REGEX04="^…[^…]"
+
+        #折り返しをまたぐ形で「――」がある(行頭に1回だけ「―」が登場する)
+        REGEX05="^―[^―]"
+
+        #行末が 「『（〝
+        REGEX06='[「『（〝]$'
+
 
     }
 
@@ -69,7 +79,7 @@ function view_violation () {
         VIOLATION_COUNT=$(\
             cat "${TARGET_FILE_WK}" \
             | sed -E "s/(.{${FOLD_LENGTH}})/\\1\\n/g" \
-            | grep -cE --color=always "(${REGEX01})|(${REGEX02})|(${REGEX03})"
+            | grep -cE --color=always "(${REGEX01})|(${REGEX02})|(${REGEX03})|(${REGEX04})|(${REGEX05})|(${REGEX06})"
         )
 
         if [[ -z ${VIEW_COUNT_tmp} ]] ; then
@@ -93,7 +103,7 @@ function view_violation () {
         #警告箇所の検出を実行
         cat "${TARGET_FILE_WK}" \
         | sed -E "s/(.{${FOLD_LENGTH}})/\\1\\n/g" \
-        | grep -En1 --color=always "(${REGEX01})|(${REGEX02})|(${REGEX03})" \
+        | grep -En1 --color=always "(${REGEX01})|(${REGEX02})|(${REGEX03})|(${REGEX04})|(${REGEX05})|(${REGEX06})" \
         | sed -n 1,${VIEW_ROWS}p
     }
 
