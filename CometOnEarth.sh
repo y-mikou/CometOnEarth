@@ -1,6 +1,11 @@
 #!/bin/bash
 
 ###################################################################
+## gawk-accelerated copy of CometOnEarth.sh
+## Duplicate to test streaming awk performance for ruby collapsing
+###################################################################
+
+###################################################################
 ## 終了処理
 ###################################################################
 function do_exit () {
@@ -10,46 +15,46 @@ function do_exit () {
 }
 
 ###################################################################
-## ルビ文字縮退関数
-## 　ルビ付き文字を、折り返し可能なように縮退※させる。
-## 　※母字数の2倍の方がルビ文字数より長ければ母字を残し、
-## 　　ルビ文字数のほうが方が長ければルビ字数の半分(切上)の■にする
-## 　※圏点についても、圏点記号を消去して母字のみにする
+## ルビ文字縮退関数 (gawk streaming implementation)
 ###################################################################
 function ruby_collapse () {
-
+    # Flatten nested brackets like sed: 's/《《\([^》]*\)》》/\1/g'
     sed -i 's/《《\([^》]*\)》》/\1/g' "${TARGET_FILE_WK}"
 
-    cat "${TARGET_FILE_WK}" | grep -oE '｜[^《]+《[^》]+》' | sed 's/[｜》]//g' | sed 's/《/\t/' > words.log
+    # Ensure gawk is available
+    if ! command -v gawk >/dev/null 2>&1; then
+        echo "警告: gawk が見つかりません。gawk をインストールするか、このスクリプトに対応する別の awk 実装を使用してください。" >&2
+        return 1
+    fi
 
-    cat "${TARGET_FILE_WK}" | grep -oE '｜[^《]+《[^》]+》' | sed 's/[｜》]//g' | sed 's/《/\t/' | cut -f 1 | awk '{ print length($0) }' > base_count.log
-
-    cat "${TARGET_FILE_WK}" | grep -oE '｜[^《]+《[^》]+》' | sed 's/[｜》]//g' | sed 's/《/\t/' | cut -f 2 | awk '{ print length($0) }' > ruby_count.log
-
-    paste words.log base_count.log ruby_count.log | sort | uniq | while read line
-        do
-            base_word=$(echo $line | cut -d' ' -f 1)		
-            ruby_word=$(echo $line | cut -d' ' -f 2)
-            base_word_count=$(echo $line | cut -d' ' -f 3)
-            ruby_word_count=$(echo $line | cut -d' ' -f 4)
-            ruby_word_half=${ruby_word:0:(( (${#ruby_word} + 2 - 1) / 2 ))}
-            # echo "${ruby_word}/${ruby_word_half}"
-            replace_from="｜${base_word}《${ruby_word}》"
-            if [[ ${base_word_count} -ge ${ruby_word_count} ]] ; then
-                replace_to="${base_word}"
-            else
-                replace_to=$( echo ${base_word} | sed "s/./■/g" )
-            fi
-            sed -i "s/${replace_from}/${replace_to}/g" "${TARGET_FILE_WK}"
-
-        done
+    gawk -v OFS="" '
+    BEGIN { }
+    {
+        line = $0;
+        while (match(line, /｜[^《]+《[^》]+》/)) {
+            token = substr(line, RSTART, RLENGTH);
+            # capture base and ruby via gensub
+            base = gensub(/｜([^《]+)《[^》]+》/, "\\1", "g", token);
+            ruby = gensub(/｜[^《]+《([^》]+)》/, "\\1", "g", token);
+            bn = length(base);
+            rn = length(ruby);
+            if (bn >= rn) {
+                repl = base;
+            } else {
+                repl = "";
+                for (i = 0; i < bn; ++i) repl = repl "■";
+            }
+            # replace at pos
+            line = substr(line, 1, RSTART-1) repl substr(line, RSTART + RLENGTH);
+        }
+        print line;
+    }' "${TARGET_FILE_WK}" > "${TARGET_FILE_WK}.tmp" && mv "${TARGET_FILE_WK}.tmp" "${TARGET_FILE_WK}"
 }
 
 ###################################################################
-## 禁則処理・その他修正必要箇所検出モード
-##   禁則処理や折り返し後の表示崩れなど
-## 　折り返したあとで出現する修正必要箇所を検出して表示する
+## 以下は CometOnEarth.sh の本体をそのままコピーしたもの
 ###################################################################
+
 function view_violation () {
 
     echo "✨️禁則処理・その他修正必要箇所検出モード"
@@ -109,11 +114,6 @@ function view_violation () {
     }
 }
 
-###################################################################
-## 簡易折り返し表示モード
-## 　指定文字数で折り返した表示を行う
-##
-###################################################################
 function view_fold () {
 
     ruby_collapse
@@ -146,9 +146,6 @@ function view_fold () {
     }
 
     : 折り返し表示実行 & {
-        #抽出行は、前1行、HIT行、後1行、区切行、の4行なので、結果の抽出行は件数の4倍で設定する
-        #確認対称を検出
-
         if [[ ${VIEW_COUNT} -eq 0 ]] ; then
             cat "${TARGET_FILE_WK}" \
             | sed -E "s/(.{${FOLD_LENGTH}})/\\1\\n/g"
@@ -161,14 +158,12 @@ function view_fold () {
 
     : 終了処理 & {
         echo "---------------------------------------"
-    }    
+    }
 }
 
 
 ###################################################################
 ## ランディンポイント
-## 
-##
 ###################################################################
 : 設定と初期化 & {
     TARGET_FILE="$1"
@@ -258,4 +253,3 @@ esac
 
 # 正常終了したときに一時ファイルを削除する
 trap do_exit EXIT
-
