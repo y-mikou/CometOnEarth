@@ -1,27 +1,18 @@
 #!/bin/bash
-
-###################################################################
-## gawk-accelerated copy of CometOnEarth.sh
-## Duplicate to test streaming awk performance for ruby collapsing
-###################################################################
-
 ###################################################################
 ## 終了処理
 ###################################################################
 function do_exit () {
-    rm -f words.log base_count.log ruby_count.log
     rm -f "${TARGET_FILE_WK}"
     exit 0
 }
 
 ###################################################################
-## ルビ文字縮退関数 (gawk streaming implementation)
+## ルビ文字縮退関数
 ###################################################################
 function ruby_collapse () {
-    # Flatten nested brackets like sed: 's/《《\([^》]*\)》》/\1/g'
     sed -i 's/《《\([^》]*\)》》/\1/g' "${TARGET_FILE_WK}"
 
-    # Ensure gawk is available
     if ! command -v gawk >/dev/null 2>&1; then
         echo "警告: gawk が見つかりません。gawk をインストールするか、このスクリプトに対応する別の awk 実装を使用してください。" >&2
         return 1
@@ -38,7 +29,7 @@ function ruby_collapse () {
             ruby = gensub(/｜[^《]+《([^》]+)》/, "\\1", "g", token);
             bn = length(base);
             rn = length(ruby);
-            if (bn >= rn) {
+            if (bn >= int((rn/2)+0.9)) {
                 repl = base;
             } else {
                 repl = "";
