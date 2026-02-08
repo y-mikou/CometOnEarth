@@ -121,7 +121,7 @@ def main():
     if len(sys.argv) < 2:
         print("Usage: python script.py target.txt")
         return
-    print(f"--- 総合検知開始 (1行幅:{MAX_WIDTH_VALUE}) ---")
+    print(f"警告の出そうな箇所を検知します (1行幅:{MAX_WIDTH_VALUE}) ")
     try:
         with open(sys.argv[1], 'r', encoding='utf-8') as f:
             for idx, line in enumerate(f, 1):
