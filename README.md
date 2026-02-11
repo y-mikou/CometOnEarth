@@ -7,14 +7,14 @@
 
 修正した結果、体裁崩れの可能性がなくなったことを確認する。
 
-<img width="600" alt="Image" src="https://github.com/user-attachments/assets/3d0b043a-b08e-4b65-afc9-1d037c4f4675" />
+<img width="566" height="246" alt="Image" src="https://github.com/user-attachments/assets/9992746a-1ca1-45b2-8573-65528cd1a227" />
 
 
 ## 簡易折り返し表示モード
 
 指定文字で折り返した状態を、簡易的につくって表示する。
 
-<img width="600" alt="Image" src="https://github.com/user-attachments/assets/076044f9-8c34-4493-8a19-6bd59487f480" />
+<img width="829" height="495" alt="Image" src="https://github.com/user-attachments/assets/a0579dba-d0e8-4ad9-b16a-a87586713457" />
 
 
 # オキモチと目的
