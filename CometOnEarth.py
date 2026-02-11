@@ -184,7 +184,7 @@ if __name__ == "__main__":
     parser.add_argument("file", help="対象のテキストファイルパスを指定してください。")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("-c", "--check 修正候補を列挙します", action="store_true", dest="mode_check")
-    group.add_argument("-v", "--view 簡易プレビューを表示し、修正候補をマークします", action="store_true", dest="mode_check")
+    group.add_argument("-v", "--view 簡易プレビューを表示し、修正候補をマークします", action="store_true", dest="mode_view")
     args = parser.parse_args()
     try:
         if args.mode_check:
