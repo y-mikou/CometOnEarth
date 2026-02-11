@@ -96,7 +96,7 @@ def run_simulation(raw_line):
 
 # チェックモード関数
 def check_mode(file_path):
-    print(f"🔍️ 禁則・文字数チェック開始 (幅:全角{MAX_WIDTH_VALUE}文字)")
+    print(f"🔍️ 禁則・文字数チェック開始 (幅:全角{MAX_WIDTH_VALUE//2}文字)")
     with open(file_path, 'r', encoding='utf-8') as f:
         for line_num, line in enumerate(f, 1):
             raw_line = line.rstrip('\n')
