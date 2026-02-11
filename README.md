@@ -9,8 +9,7 @@
 
 1段落につき初回に搭乗するもののみを表示する(1つ目のものを修正したら2つ目以降はズレれるため)。
 
-<img width="566" height="246" alt="Image" src="https://github.com/user-attachments/assets/9992746a-1ca1-45b2-8573-65528cd1a227" />
-
+<img width="466" height="325" alt="Image" src="https://github.com/user-attachments/assets/f9857833-0d5b-4b0b-967e-e918ac87968f" />
 
 ## 簡易折り返し表示モード
 
